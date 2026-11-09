@@ -1,0 +1,25 @@
+{
+  "name": "chargeguard-ai-pro",
+  "version": "1.0.0",
+  "description": "AI-assisted predictive health monitoring system for USB charging cables and power adapters",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test:frontend": "npm --prefix frontend test",
+    "test:backend": "powershell -Command \"& backend/.venv/Scripts/pytest.exe -v backend/tests\"",
+    "test": "npm run test:frontend && npm run test:backend",
+    "start": "powershell -File ./scripts/start.ps1"
+  },
+  "keywords": [
+    "usb-cable-tester",
+    "predictive-health",
+    "iot",
+    "esp32",
+    "fastapi",
+    "react",
+    "electronics-diagnostics"
+  ],
+  "author": "ChargeGuard AI Engineering Team",
+  "license": "MIT"
+}
