@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.models import TestSession, Measurement, Alert, AnalysisResult, Device, Cable
 from app.schemas import MeasurementIngestContract
 from app.diagnostics.rules_engine import RulesDiagnosticEngine
+from app.diagnostics.health_engine import calculate_instantaneous_health
+from app.services.hardware_bridge import hardware_bridge_service
 from app.diagnostics.ml_classifier import MLClassifierDiagnosticEngine
 from app.services.settings_service import get_current_settings
 from app.websocket.manager import ws_manager
@@ -81,20 +83,21 @@ async def process_incoming_measurement(
     if voltage_stability is None and sink_v is not None:
         voltage_stability = round(abs(5.0 - sink_v) / 5.0, 4)
 
-    # Real-Time Fault Status Evaluation using ML Classifier
-    fault_status = contract.fault_status or "NORMAL"
-    if is_valid and sink_v is not None:
-        try:
-            from app.ml.fault_classifier import fault_classifier
-            pred = fault_classifier.predict([{
-                "sink_voltage_v": sink_v,
-                "current_a": current_a or 0.0,
-                "temperature_c": temp_c or 25.0,
-                "effective_resistance_ohm": effective_resistance_ohm or 0.06
-            }])
-            fault_status = pred.get("predicted_fault", "NORMAL")
-        except Exception:
-            fault_status = "NORMAL"
+    # Fetch active diagnostic thresholds
+    thresholds = get_current_settings(db)
+
+    # Single Source of Truth: Centralized Instantaneous Health and Fault Classification
+    health_eval = calculate_instantaneous_health(
+        sink_voltage_v=sink_v,
+        current_a=current_a,
+        temperature_c=temp_c,
+        effective_resistance_ohm=effective_resistance_ohm,
+        voltage_stability=voltage_stability,
+        thresholds=thresholds
+    )
+    health_score = health_eval["health_score"]
+    fault_status = health_eval["fault_status"]
+    primary_reason = health_eval["primary_reason"]
 
     # 3. Create and persist Measurement entity
     measurement = Measurement(
@@ -117,7 +120,6 @@ async def process_incoming_measurement(
     db.flush()
 
     # 4. Real-time Safety and Rule Evaluation
-    thresholds = get_current_settings(db)
     diagnostic_eval = rules_engine.evaluate([measurement], thresholds)
 
     # Persist any immediate alerts triggered
@@ -180,6 +182,8 @@ async def process_incoming_measurement(
             "humidity_pct": measurement.humidity_pct,
             "voltage_stability": measurement.voltage_stability,
             "fault_status": measurement.fault_status,
+            "health_score": health_score,
+            "primary_reason": primary_reason,
             "voltage_drop_v": measurement.voltage_drop_v,
             "effective_resistance_ohm": measurement.effective_resistance_ohm,
             "measurement_valid": measurement.measurement_valid,
@@ -189,6 +193,20 @@ async def process_incoming_measurement(
         }
     }
     await ws_manager.broadcast(payload)
+
+    # Bidirectional hardware synchronization: transmit authoritative score and status to ESP32 LCD
+    if session.mode == "hardware" or contract.mode == "hardware":
+        try:
+            hardware_bridge_service.send_sync_command(
+                score=health_score,
+                status=fault_status,
+                reason=primary_reason,
+                v=sink_v,
+                i=current_a,
+                t=temp_c
+            )
+        except Exception as sync_err:
+            logger.debug(f"Failed to transmit SYNC command to ESP32: {sync_err}")
 
     return measurement
 

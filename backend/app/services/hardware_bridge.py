@@ -243,6 +243,28 @@ class HardwareBridgeService:
         self.active_test_id = None
         logger.info(f"[Bridge -> ESP32] STOP sent: {reason}")
 
+    def send_sync_command(self, score: int, status: str, reason: str = "OK", v: Optional[float] = None, i: Optional[float] = None, t: Optional[float] = None):
+        """
+        Transmit authoritative centralized health score and fault classification
+        down to the ESP32 physical fixture so the physical LCD displays the exact same values.
+        """
+        payload = {
+            "cmd": "SYNC",
+            "score": int(score),
+            "status": str(status).upper(),
+            "reason": str(reason)[:24]
+        }
+        if v is not None:
+            payload["v"] = round(float(v), 2)
+        if i is not None:
+            payload["i"] = round(float(i), 2)
+        if t is not None:
+            payload["t"] = round(float(t), 1)
+
+        msg = json.dumps(payload) + "\n"
+        self._send_raw(msg.encode("utf-8"))
+        logger.info(f"[Bridge -> ESP32 SYNC] Sent: {msg.strip()}")
+
     def _send_raw(self, data: bytes):
         if self.ser and self.ser.is_open:
             try:

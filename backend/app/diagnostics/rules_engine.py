@@ -347,11 +347,12 @@ class RulesDiagnosticEngine(BaseDiagnosticEngine):
         warning_count = sum(1 for a in alerts_triggered if a["severity"] == "warning")
 
         # Critical safety faults immediately classify as Critical regardless of sample count
+        # Harmonized with Single Source of Truth (health_engine.py): Critical undervoltage yields 55.0 and Critical
         if has_critical:
-            score = 30.0
+            score = 55.0
             if max_temp and max_temp >= 50.0:
                 score -= 15.0
-            if avg_resistance and avg_resistance > 1.0:
+            if avg_resistance and avg_resistance > 0.60:
                 score -= 10.0
             score = max(5.0, score)
             confidence = 0.85 if has_source_measurement else 0.70

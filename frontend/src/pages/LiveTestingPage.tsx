@@ -321,6 +321,18 @@ export const LiveTestingPage: React.FC = () => {
   const liveResist = latestTelemetry?.effective_resistance_ohm ?? null;
   const isPaired = liveSourceV != null && liveSinkV > 0;
 
+  // Single Source of Truth: Instantaneous Synchronized Health & Fault
+  const liveFaultStatus = latestTelemetry?.fault_status || (
+    liveTemp >= 50.0 || (liveSinkV > 0 && liveSinkV < 4.20) ? 'FAULT' :
+    liveTemp >= 42.0 || (liveSinkV > 0 && liveSinkV < 4.50) ? 'WARNING' : 'NORMAL'
+  );
+  const liveHealthScore = latestTelemetry?.health_score ?? (
+    liveFaultStatus === 'FAULT' ? 55 : liveFaultStatus === 'WARNING' ? 75 : 100
+  );
+  const livePrimaryReason = latestTelemetry?.primary_reason || (
+    liveFaultStatus === 'FAULT' ? 'Critical Undervoltage / Cable Sag' : 'Nominal 5.0V USB Supply'
+  );
+
   // Overheat Alert Logic - only active when test is actively running and temperature is genuinely elevated
   const isOverheatCrit = isRunning && liveTemp >= 50.0;
   const isOverheatWarn = isRunning && liveTemp >= 42.0;
@@ -869,8 +881,8 @@ export const LiveTestingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Gauges Grid with Floating Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            {/* Gauges Grid with Floating Cards (6 Synchronized Indicators) */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="floating-card p-3.5 bg-slate-900/70 border-slate-800">
                 <div className="text-[11px] text-slate-400">Sink Voltage</div>
                 <div className="text-2xl font-bold font-mono text-white mt-1">
@@ -932,6 +944,60 @@ export const LiveTestingPage: React.FC = () => {
                   }`}
                 >
                   {isOverheatCrit ? 'CRITICAL (Trip ≥50°C)' : isOverheatWarn ? 'WARNING (Elevated)' : 'Safe Thermal Envelope'}
+                </div>
+              </div>
+
+              {/* Indicator 5: Synchronized Health Score (Single Source of Truth) */}
+              <div className={`floating-card p-3.5 transition-colors ${
+                liveFaultStatus === 'FAULT' ? 'border-rose-500/80 bg-rose-950/40' :
+                liveFaultStatus === 'WARNING' ? 'border-amber-500/80 bg-amber-950/40' :
+                'bg-slate-900/70 border-slate-800'
+              }`}>
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Health Score</span>
+                  <ShieldCheck className={`w-3.5 h-3.5 ${
+                    liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                    liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                    'text-emerald-400'
+                  }`} />
+                </div>
+                <div className={`text-2xl font-bold font-mono mt-1 ${
+                  liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                  liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                  'text-emerald-300'
+                }`}>
+                  {liveHealthScore}
+                  <span className="text-xs text-slate-400 font-normal ml-0.5">/100</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>LCD: H:{liveHealthScore}</span>
+                  <span className="text-[9px] font-bold text-cyan-400">SYNCED</span>
+                </div>
+              </div>
+
+              {/* Indicator 6: Synchronized Fault Classification */}
+              <div className={`floating-card p-3.5 transition-colors ${
+                liveFaultStatus === 'FAULT' ? 'border-rose-500/80 bg-rose-950/40' :
+                liveFaultStatus === 'WARNING' ? 'border-amber-500/80 bg-amber-950/40' :
+                'bg-slate-900/70 border-slate-800'
+              }`}>
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Fault Status</span>
+                  <Activity className={`w-3.5 h-3.5 ${
+                    liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                    liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                    'text-cyan-400'
+                  }`} />
+                </div>
+                <div className={`text-base font-extrabold font-mono mt-1.5 truncate ${
+                  liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                  liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                  'text-emerald-300'
+                }`}>
+                  {liveFaultStatus}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 truncate" title={livePrimaryReason}>
+                  {livePrimaryReason}
                 </div>
               </div>
             </div>

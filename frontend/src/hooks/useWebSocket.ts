@@ -14,6 +14,9 @@ export interface LiveTelemetryPayload {
   temperature_c?: number | null;
   voltage_drop_v?: number | null;
   effective_resistance_ohm?: number | null;
+  fault_status?: string | null;
+  health_score?: number | null;
+  primary_reason?: string | null;
   measurement_valid: boolean;
   validity_reason?: string | null;
   session_status: string;

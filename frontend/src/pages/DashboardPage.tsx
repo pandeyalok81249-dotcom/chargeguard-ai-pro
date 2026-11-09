@@ -89,27 +89,76 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  // Mode State: Allows switching between Live Hardware Rig and Demo Simulation
+  const [hardwareFilterMode, setHardwareFilterMode] = useState<'hardware' | 'demo'>('hardware');
+  const [clockNow, setClockNow] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Determine active or latest telemetry values
-  const activeMode = latestTelemetry?.mode || summary?.connection_mode || 'demo';
+  const activeMode = latestTelemetry?.mode || summary?.connection_mode || 'hardware';
+  const isTesting = summary?.active_test != null || latestTelemetry?.session_status === 'running';
+
+  // Stale Telemetry Detection: Alert if no frame received within 3.5 seconds
+  const lastTelemetryMs = latestTelemetry?.timestamp ? new Date(latestTelemetry.timestamp).getTime() : 0;
+  const isStale = isTesting && lastTelemetryMs > 0 && (clockNow - lastTelemetryMs > 3500);
+
   const liveVoltage = latestTelemetry?.sink_voltage_v ?? (summary?.active_test ? 4.95 : 0);
   const liveCurrent = latestTelemetry?.current_a ?? (summary?.active_test ? 1.45 : 0);
   const livePower = latestTelemetry?.power_w ?? (liveVoltage * liveCurrent);
   const liveTemp = latestTelemetry?.temperature_c ?? (summary?.active_test ? 29.5 : 0);
   const liveHumidity = (latestTelemetry as any)?.humidity_pct ?? 52.0;
   const liveStability = (latestTelemetry as any)?.voltage_stability ?? 0.0042;
-  const liveFaultStatus = (latestTelemetry as any)?.fault_status ?? (liveTemp >= 50.0 ? 'OVERHEATING' : liveVoltage > 0 && liveVoltage < 4.2 ? 'UNDERVOLTAGE' : 'NORMAL');
 
-  const isTesting = summary?.active_test != null || latestTelemetry?.session_status === 'running';
+  // Single Source of Truth: Centralized Instantaneous Fault Status & Primary Reason
+  const rawStatus = (latestTelemetry as any)?.fault_status;
+  const liveFaultStatus: 'NORMAL' | 'WARNING' | 'FAULT' = (rawStatus === 'FAULT' || rawStatus === 'CRITICAL' || liveTemp >= 50.0 || (liveVoltage > 0 && liveVoltage < 4.20))
+    ? 'FAULT'
+    : (rawStatus === 'WARNING' || liveTemp >= 42.0 || (liveVoltage > 0 && liveVoltage < 4.50))
+    ? 'WARNING'
+    : 'NORMAL';
+
+  const liveFaultReason = (latestTelemetry as any)?.primary_reason || (
+    liveFaultStatus === 'FAULT'
+      ? (liveVoltage > 0 && liveVoltage < 4.20 ? 'Critical Undervoltage (< 4.20V)' : liveTemp >= 50.0 ? 'Critical Overheat (>= 50°C)' : 'Hardware Limit Exceeded')
+      : liveFaultStatus === 'WARNING'
+      ? 'Marginal Cable Performance'
+      : 'Nominal 5.0V USB Operating State'
+  );
+
+  // Single Source of Truth Synchronized Health Score:
+  // Must match ESP32 LCD identically (e.g. 55 and FAULT)
+  const healthScore = latestTelemetry?.health_score ?? (
+    liveFaultStatus === 'FAULT' ? 55 : liveFaultStatus === 'WARNING' ? 75 : 94
+  );
 
   // Only display the overheat alert when a test is actively running AND temperature is elevated
   const isOverheatCrit = isTesting && liveTemp >= 50.0;
   const isOverheatWarn = isTesting && liveTemp >= 42.0 && liveTemp < 50.0;
 
-  // Health Score Calculation
-  const healthScore = summary?.avg_health_score ?? (liveFaultStatus === 'NORMAL' ? 94 : 58);
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Stale Hardware Telemetry Warning Banner */}
+      {isStale && (
+        <div className="p-3.5 rounded-2xl border border-amber-500/80 bg-amber-950/80 text-amber-200 flex items-center justify-between shadow-lg animate-pulse">
+          <div className="flex items-center space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold">Hardware Telemetry Stale:</span> No sensor frames received from ESP32 in the last {( (clockNow - lastTelemetryMs) / 1000 ).toFixed(1)}s. Check physical USB cable and serial connection.
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/devices')}
+            className="px-3 py-1 bg-amber-600/40 hover:bg-amber-600/60 border border-amber-400/50 rounded-lg text-xs font-semibold text-white transition-colors cursor-pointer shrink-0"
+          >
+            Inspect COM Port
+          </button>
+        </div>
+      )}
+
       {/* Overheat Warning Banner: Only shown when temperature is actually raised during a test */}
       {(isOverheatCrit || isOverheatWarn) && (
         <div
@@ -223,16 +272,37 @@ export const DashboardPage: React.FC = () => {
           <div className="text-[10px] text-slate-500 mt-0.5">Archived in DB</div>
         </div>
 
-        <div className="floating-card floating-card-emerald p-4">
+        <div className={`floating-card p-4 transition-colors ${
+          liveFaultStatus === 'FAULT' ? 'border-rose-500/80 bg-rose-950/40' :
+          liveFaultStatus === 'WARNING' ? 'border-amber-500/80 bg-amber-950/40' :
+          'floating-card-emerald'
+        }`}>
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Health Score</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Hardware Health</span>
+            <ShieldCheck className={`w-4 h-4 ${
+              liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+              liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+              'text-emerald-400'
+            }`} />
           </div>
-          <div className="text-2xl font-bold text-emerald-300 mt-1.5 font-mono">
+          <div className={`text-2xl font-bold mt-1.5 font-mono ${
+            liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+            liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+            'text-emerald-300'
+          }`}>
             {healthScore}
             <span className="text-xs text-slate-400 font-normal">/100</span>
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Fleet average</div>
+          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center justify-between">
+            <span>LCD: H:{healthScore}</span>
+            <span className={`font-bold px-1 rounded text-[9px] ${
+              liveFaultStatus === 'FAULT' ? 'bg-rose-900/60 text-rose-300' :
+              liveFaultStatus === 'WARNING' ? 'bg-amber-900/60 text-amber-300' :
+              'bg-emerald-900/60 text-emerald-300'
+            }`}>
+              {liveFaultStatus}
+            </span>
+          </div>
         </div>
 
         <div className="floating-card floating-card-amber p-4">
@@ -361,31 +431,55 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Indicator 6: Device Health Score */}
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div className={`p-3.5 rounded-xl border transition-colors ${
+            liveFaultStatus === 'FAULT' ? 'bg-rose-950/40 border-rose-600' :
+            liveFaultStatus === 'WARNING' ? 'bg-amber-950/40 border-amber-600' :
+            'bg-slate-900/80 border-slate-800'
+          }`}>
             <div className="text-[11px] text-slate-400 flex items-center justify-between">
               <span>6. Health Score</span>
-              <Gauge className="w-3.5 h-3.5 text-emerald-400" />
+              <Gauge className={`w-3.5 h-3.5 ${
+                liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                'text-emerald-400'
+              }`} />
             </div>
-            <div className="text-2xl font-extrabold text-emerald-400 mt-1 font-mono">
+            <div className={`text-2xl font-extrabold mt-1 font-mono ${
+              liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+              liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+              'text-emerald-400'
+            }`}>
               {healthScore}
               <span className="text-xs text-slate-400 font-normal ml-1">/100</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">
-              {healthScore >= 80 ? 'Optimal Condition' : 'Wear Detected'}
+              ESP32 LCD Sync: H:{healthScore}
             </div>
           </div>
 
           {/* Indicator 7: Current Fault Status */}
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div className={`p-3.5 rounded-xl border transition-colors ${
+            liveFaultStatus === 'FAULT' ? 'bg-rose-950/40 border-rose-600' :
+            liveFaultStatus === 'WARNING' ? 'bg-amber-950/40 border-amber-600' :
+            'bg-slate-900/80 border-slate-800'
+          }`}>
             <div className="text-[11px] text-slate-400 flex items-center justify-between">
               <span>7. Fault Status</span>
-              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+              <Cpu className={`w-3.5 h-3.5 ${
+                liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+                liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+                'text-cyan-400'
+              }`} />
             </div>
-            <div className="text-sm font-extrabold text-cyan-300 mt-2 font-mono truncate">
+            <div className={`text-sm font-extrabold mt-2 font-mono truncate ${
+              liveFaultStatus === 'FAULT' ? 'text-rose-400' :
+              liveFaultStatus === 'WARNING' ? 'text-amber-400' :
+              'text-cyan-300'
+            }`}>
               {liveFaultStatus}
             </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              Supervised 7-class ML
+            <div className="text-[10px] text-slate-400 mt-1 truncate" title={liveFaultReason}>
+              {liveFaultReason}
             </div>
           </div>
 
