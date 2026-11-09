@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Measurement, Alert } from '../types';
+import { Alert, DeviceStatusPayload } from '../types';
 
 export interface LiveTelemetryPayload {
   test_id: string;
@@ -20,9 +20,20 @@ export interface LiveTelemetryPayload {
   alerts?: Alert[];
 }
 
+export interface TestStateChangePayload {
+  test_id: string;
+  status: string;
+  final_result?: string | null;
+  diagnostic_summary?: string | null;
+  health_score?: number | null;
+  health_category?: string | null;
+}
+
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [latestTelemetry, setLatestTelemetry] = useState<LiveTelemetryPayload | null>(null);
+  const [latestDeviceStatus, setLatestDeviceStatus] = useState<DeviceStatusPayload | null>(null);
+  const [latestTestStateChange, setLatestTestStateChange] = useState<TestStateChangePayload | null>(null);
   const [telemetryHistory, setTelemetryHistory] = useState<LiveTelemetryPayload[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -51,6 +62,10 @@ export function useWebSocket() {
               const updated = [...prev, data];
               return updated.slice(-30);
             });
+          } else if (message.type === 'device_status') {
+            setLatestDeviceStatus(message.data);
+          } else if (message.type === 'test_state_change') {
+            setLatestTestStateChange(message.data);
           }
         } catch {
           // ignore pong or unparsable frames
@@ -103,6 +118,8 @@ export function useWebSocket() {
   return {
     isConnected,
     latestTelemetry,
+    latestDeviceStatus,
+    latestTestStateChange,
     telemetryHistory,
     clearHistory,
   };

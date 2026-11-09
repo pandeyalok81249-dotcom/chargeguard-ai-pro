@@ -17,7 +17,7 @@ def test_cable_crud_flow(client):
     assert res.status_code == 200
     assert all(c["connector_type"] == "USB-C to USB-C" for c in res.json())
 
-    # 4. Create new cable
+    # 4. Create new cable with full specifications
     new_cable = {
         "cable_id": "cable-test-01",
         "display_name": "Ugreen 100W Right-Angle",
@@ -26,12 +26,20 @@ def test_cable_crud_flow(client):
         "manufacturer_metadata": "Ugreen (User Provided)",
         "rated_power_w": 100.0,
         "rated_current_a": 5.0,
+        "rated_voltage_v": 20.0,
+        "length_m": 1.5,
+        "serial_number": "UG-100W-2024",
+        "purchase_date": "2024-01-15",
         "notes": "Testing cable"
     }
     res = client.post("/api/cables", json=new_cable)
     assert res.status_code == 201
     created = res.json()
     assert created["cable_id"] == "cable-test-01"
+    assert created["length_m"] == 1.5
+    assert created["serial_number"] == "UG-100W-2024"
+    assert created["rated_voltage_v"] == 20.0
+    assert created["purchase_date"] == "2024-01-15"
 
     # 5. Reject duplicate ID
     res = client.post("/api/cables", json=new_cable)

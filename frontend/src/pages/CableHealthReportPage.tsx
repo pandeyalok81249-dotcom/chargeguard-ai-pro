@@ -94,6 +94,15 @@ export const CableHealthReportPage: React.FC = () => {
 
         <div className="flex items-center space-x-2">
           <a
+            href={api.getTestReportPdfUrl(test_metadata.test_id)}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/40 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download PDF</span>
+          </a>
+          <a
             href={api.getSingleTestExportCsvUrl(test_metadata.test_id)}
             download
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 border border-slate-700 cursor-pointer"
@@ -123,12 +132,21 @@ export const CableHealthReportPage: React.FC = () => {
               <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
                 Verification Report
               </span>
+              {test_metadata.mode === 'demo' ? (
+                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                  DEMO SIMULATION
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  HARDWARE RIG
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-extrabold text-white mt-1">
               Cable Health & Diagnostic Assessment
             </h1>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Report ID: {report_id} | Mode: {test_metadata.mode.toUpperCase()}
+              Report ID: {report_id} | Test ID: {test_metadata.test_id} | Device: {test_metadata.device_id}
             </p>
           </div>
 
@@ -137,6 +155,16 @@ export const CableHealthReportPage: React.FC = () => {
             <div>Profile: {test_metadata.profile_voltage_v} V DC Fixed</div>
           </div>
         </div>
+
+        {/* Demo Mode Notice */}
+        {test_metadata.mode === 'demo' && (
+          <div className="p-3 rounded-lg bg-blue-950/60 border border-blue-800 text-blue-200 text-xs flex items-center gap-2">
+            <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>
+              <strong>SIMULATED DEMO REPORT:</strong> This session was evaluated in simulator mode. Telemetry readings reflect controlled synthetic test vectors and are clearly distinguished from physical hardware bench measurements.
+            </span>
+          </div>
+        )}
 
         {/* Health Score & Classification Hero */}
         <div className="p-6 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -226,6 +254,13 @@ export const CableHealthReportPage: React.FC = () => {
                 <span>
                   {cable_specifications.rated_power_w ? `${cable_specifications.rated_power_w}W` : 'Unrated'} /{' '}
                   {cable_specifications.rated_current_a ? `${cable_specifications.rated_current_a}A` : 'Unrated'}
+                  {cable_specifications.rated_voltage_v ? ` (${cable_specifications.rated_voltage_v}V)` : ''}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Length & Serial:</span>
+                <span>
+                  {cable_specifications.length_m ? `${cable_specifications.length_m}m` : '1.0m'} | {cable_specifications.serial_number || 'N/A'}
                 </span>
               </div>
             </div>

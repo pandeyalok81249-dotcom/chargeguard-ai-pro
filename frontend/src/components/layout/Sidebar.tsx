@@ -9,7 +9,10 @@ import {
   Server,
   Settings,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  BrainCircuit,
+  Bot,
+  Wrench
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,7 +27,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ connectionMode, wsConnected, a
     { to: '/testing', label: 'Live Testing', icon: Zap, badge: activeTestId ? 'ACTIVE' : null },
     { to: '/cables', label: 'Cable Inventory', icon: CableIcon },
     { to: '/history', label: 'Test History', icon: History },
-    { to: '/diagnostics', label: 'AI Diagnostics', icon: Cpu },
+    { to: '/ml', label: 'ML & Predictive', icon: BrainCircuit },
+    { to: '/assistant', label: 'AI Assistant', icon: Bot, badge: 'AI' },
+    { to: '/maintenance', label: 'Maintenance', icon: Wrench },
+    { to: '/diagnostics', label: 'Rules & Alerts', icon: Cpu },
     { to: '/devices', label: 'Device Management', icon: Server },
     { to: '/settings', label: 'Settings', icon: Settings },
   ];

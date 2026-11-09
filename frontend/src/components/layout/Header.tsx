@@ -1,6 +1,7 @@
 import React from 'react';
-import { Square, Zap, ShieldAlert, Wifi, WifiOff } from 'lucide-react';
+import { Square, Zap, ShieldAlert, Wifi, WifiOff, User as UserIcon, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { User } from '../../types';
 
 interface HeaderProps {
   activeTest?: {
@@ -10,10 +11,12 @@ interface HeaderProps {
     mode: string;
   } | null;
   wsConnected: boolean;
+  currentUser?: User | null;
+  onOpenAuth?: () => void;
   onStopTest?: (testId: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTest, wsConnected, onStopTest }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTest, wsConnected, currentUser, onOpenAuth, onStopTest }) => {
   const navigate = useNavigate();
 
   return (
@@ -44,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTest, wsConnected, onStopT
         )}
       </div>
 
-      {/* Right: Quick actions & WebSocket Status */}
+      {/* Right: Quick actions & Auth & WebSocket Status */}
       <div className="flex items-center space-x-3">
         {!activeTest && (
           <button
@@ -70,6 +73,29 @@ export const Header: React.FC<HeaderProps> = ({ activeTest, wsConnected, onStopT
             </>
           )}
         </div>
+
+        {/* User Auth Profile Trigger */}
+        <button
+          onClick={onOpenAuth}
+          className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
+        >
+          {currentUser ? (
+            <>
+              <div className="w-5 h-5 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 text-[10px] font-bold">
+                {currentUser.full_name.charAt(0)}
+              </div>
+              <span className="font-semibold text-slate-200">{currentUser.full_name.split(' ')[0]}</span>
+              <span className="text-[10px] uppercase font-mono px-1 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                {currentUser.role}
+              </span>
+            </>
+          ) : (
+            <>
+              <UserIcon className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Sign In</span>
+            </>
+          )}
+        </button>
       </div>
     </header>
   );

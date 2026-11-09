@@ -17,9 +17,11 @@ def list_cables(
     search: Optional[str] = Query(None, description="Search by cable ID, name, or manufacturer"),
     connector_type: Optional[str] = Query(None, description="Filter by connector type"),
     cable_type: Optional[str] = Query(None, description="Filter by jacket material"),
+    sort_by: Optional[str] = Query("created_at", description="Sort by field: created_at, display_name, rated_power_w, length_m"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),
     db: Session = Depends(get_db)
 ):
-    """Retrieve registered cables with search and filter capabilities."""
+    """Retrieve registered cables with search, filter, and sort capabilities."""
     query = db.query(Cable)
     
     if search:
@@ -27,14 +29,22 @@ def list_cables(
         query = query.filter(
             (Cable.cable_id.ilike(s)) |
             (Cable.display_name.ilike(s)) |
-            (Cable.manufacturer_metadata.ilike(s))
+            (Cable.manufacturer_metadata.ilike(s)) |
+            (Cable.serial_number.ilike(s))
         )
     if connector_type:
         query = query.filter(Cable.connector_type == connector_type)
     if cable_type:
         query = query.filter(Cable.cable_type == cable_type)
 
-    return query.order_by(Cable.created_at.desc()).all()
+    # Sorting
+    sort_column = getattr(Cable, sort_by, Cable.created_at)
+    if sort_order and sort_order.lower() == "asc":
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+
+    return query.all()
 
 @router.post("/cables", response_model=CableResponse, status_code=status.HTTP_201_CREATED, summary="Add Cable")
 def create_cable(payload: CableCreate, db: Session = Depends(get_db)):
@@ -54,6 +64,10 @@ def create_cable(payload: CableCreate, db: Session = Depends(get_db)):
         manufacturer_metadata=payload.manufacturer_metadata,
         rated_power_w=payload.rated_power_w,
         rated_current_a=payload.rated_current_a,
+        rated_voltage_v=payload.rated_voltage_v,
+        length_m=payload.length_m,
+        serial_number=payload.serial_number,
+        purchase_date=payload.purchase_date,
         notes=payload.notes,
         created_at=utc_now(),
         updated_at=utc_now()
@@ -90,6 +104,14 @@ def update_cable(cable_id: str, payload: CableUpdate, db: Session = Depends(get_
         cable.rated_power_w = payload.rated_power_w
     if payload.rated_current_a is not None:
         cable.rated_current_a = payload.rated_current_a
+    if payload.rated_voltage_v is not None:
+        cable.rated_voltage_v = payload.rated_voltage_v
+    if payload.length_m is not None:
+        cable.length_m = payload.length_m
+    if payload.serial_number is not None:
+        cable.serial_number = payload.serial_number
+    if payload.purchase_date is not None:
+        cable.purchase_date = payload.purchase_date
     if payload.notes is not None:
         cable.notes = payload.notes
         

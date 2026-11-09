@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy import String
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import uuid
@@ -11,12 +12,13 @@ from app.core.datetime_utils import utc_now, utc_now_iso
 from app.db.database import get_db
 from app.models import TestSession, Measurement, Alert, AnalysisResult, Device, Cable
 from app.schemas import (
-    TestStartRequest, TestStopRequest, TestSessionResponse,
+    TestStartRequest, TestStopRequest, TestControlRequest, TestSessionResponse,
     TestSessionSummary, MeasurementResponse, AnalysisResultResponse
 )
 from app.services.simulator import simulator_service
 from app.services.test_runner import finalize_test_session
 from app.services.settings_service import get_current_settings
+from app.api.v1.endpoints.devices import enqueue_device_command
 from app.core.logging import logger
 
 router = APIRouter()
@@ -27,6 +29,8 @@ def list_tests(
     mode: Optional[str] = Query(None, description="Filter by mode: demo or hardware"),
     result: Optional[str] = Query(None, description="Filter by result: healthy, warning, critical, insufficient_data"),
     status: Optional[str] = Query(None, description="Filter by status: running, completed, stopped, failed"),
+    date: Optional[str] = Query(None, description="Filter by date YYYY-MM-DD"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: desc or asc"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
@@ -42,8 +46,15 @@ def list_tests(
         query = query.filter(TestSession.final_result == result)
     if status:
         query = query.filter(TestSession.status == status)
+    if date:
+        query = query.filter(TestSession.started_at.cast(String).like(f"{date}%"))
 
-    sessions = query.order_by(TestSession.started_at.desc()).offset(offset).limit(limit).all()
+    if sort_order and sort_order.lower() == "asc":
+        query = query.order_by(TestSession.started_at.asc())
+    else:
+        query = query.order_by(TestSession.started_at.desc())
+
+    sessions = query.offset(offset).limit(limit).all()
 
     summaries = []
     for s in sessions:
@@ -75,7 +86,7 @@ def list_tests(
     return summaries
 
 @router.post("/tests/start", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED, summary="Start Test Session")
-def start_test(payload: TestStartRequest, db: Session = Depends(get_db)):
+async def start_test(payload: TestStartRequest, db: Session = Depends(get_db)):
     """
     Initialize and start a new test session.
     In DEMO mode, deterministic simulated telemetry is automatically started.
@@ -138,7 +149,7 @@ def start_test(payload: TestStartRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(session)
 
-    # 5. Launch Simulator if Demo mode
+    # 5. Launch Simulator if Demo mode, or dispatch hardware command to serial bridge
     if payload.mode == "demo":
         scenario = payload.simulated_scenario or "normal"
         simulator_service.start_simulation(
@@ -147,6 +158,19 @@ def start_test(payload: TestStartRequest, db: Session = Depends(get_db)):
             cable_id=payload.cable_id,
             scenario=scenario
         )
+    elif payload.mode == "hardware":
+        enqueue_device_command(payload.device_id, {
+            "command": "START",
+            "cable_id": payload.cable_id,
+            "test_id": test_id
+        })
+        from app.services.hardware_bridge import hardware_bridge_service
+        if not hardware_bridge_service.is_connected:
+            logger.info("Attempting auto-connect to ESP32 on hardware test start...")
+            hardware_bridge_service.connect(port="auto", force_unlock=True)
+        if hardware_bridge_service.is_connected:
+            hardware_bridge_service.start_hardware_test(payload.cable_id, test_id)
+        logger.info(f"Queued hardware START command for device '{payload.device_id}', test '{test_id}'")
 
     return session
 
@@ -157,13 +181,50 @@ async def stop_test(test_id: str, payload: Optional[TestStopRequest] = None, db:
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Test '{test_id}' not found")
 
-    # Stop simulator if running
+    reason = payload.reason if payload else "User requested stop"
+
+    # Stop simulator if running, or dispatch STOP command to hardware
     if session.mode == "demo":
         simulator_service.stop_simulation(test_id)
+    elif session.mode == "hardware":
+        enqueue_device_command(session.device_id, {
+            "command": "STOP",
+            "reason": reason,
+            "test_id": session.test_id
+        })
+        from app.services.hardware_bridge import hardware_bridge_service
+        if hardware_bridge_service.is_connected:
+            hardware_bridge_service.stop_hardware_test(reason)
+        logger.info(f"Queued hardware STOP command for device '{session.device_id}', test '{session.test_id}'")
 
-    reason = payload.reason if payload else "User requested stop"
     updated_session = await finalize_test_session(db, test_id, stop_reason=reason)
     return updated_session
+
+@router.post("/tests/{test_id}/control", summary="Adjust Live Test Physics Parameters")
+def control_test(
+    test_id: str,
+    payload: TestControlRequest,
+    db: Session = Depends(get_db)
+):
+    """Dynamically adjust load current, thermal stress, or cable flex for a running test."""
+    session = db.query(TestSession).filter(TestSession.test_id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Test '{test_id}' not found")
+    if session.status != "running":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Test '{test_id}' is not currently running")
+
+    updated = simulator_service.update_simulation_controls(
+        test_id=test_id,
+        load_current_a=payload.load_current_a,
+        thermal_stress=payload.thermal_stress,
+        flex_stress=payload.flex_stress,
+        scenario=payload.simulated_scenario
+    )
+    return {
+        "status": "updated" if updated else "noop",
+        "test_id": test_id,
+        "controls": payload.model_dump(exclude_unset=True)
+    }
 
 @router.get("/tests/{test_id}", response_model=TestSessionResponse, summary="Get Test Session")
 def get_test(test_id: str, db: Session = Depends(get_db)):
@@ -237,6 +298,10 @@ def get_test_health_report(test_id: str, db: Session = Depends(get_db)):
             "manufacturer_metadata": cable.manufacturer_metadata if cable else "User Provided",
             "rated_power_w": cable.rated_power_w if cable else None,
             "rated_current_a": cable.rated_current_a if cable else None,
+            "rated_voltage_v": getattr(cable, 'rated_voltage_v', None) if cable else None,
+            "length_m": getattr(cable, 'length_m', None) if cable else None,
+            "serial_number": getattr(cable, 'serial_number', None) if cable else None,
+            "purchase_date": getattr(cable, 'purchase_date', None) if cable else None,
             "notes": cable.notes if cable else None
         },
         "health_assessment": {

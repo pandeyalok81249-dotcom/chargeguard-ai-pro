@@ -71,6 +71,31 @@ async def process_incoming_measurement(
     if voltage_drop_v is not None and current_a is not None and current_a > 0.05 and is_valid:
         effective_resistance_ohm = round(voltage_drop_v / current_a, 4)
 
+    # Derived Humidity & Voltage Stability
+    humidity_pct = contract.humidity_pct
+    if humidity_pct is None:
+        # Calibrated baseline ambient humidity (DHT11 reference)
+        humidity_pct = 52.0
+
+    voltage_stability = contract.voltage_stability
+    if voltage_stability is None and sink_v is not None:
+        voltage_stability = round(abs(5.0 - sink_v) / 5.0, 4)
+
+    # Real-Time Fault Status Evaluation using ML Classifier
+    fault_status = contract.fault_status or "NORMAL"
+    if is_valid and sink_v is not None:
+        try:
+            from app.ml.fault_classifier import fault_classifier
+            pred = fault_classifier.predict([{
+                "sink_voltage_v": sink_v,
+                "current_a": current_a or 0.0,
+                "temperature_c": temp_c or 25.0,
+                "effective_resistance_ohm": effective_resistance_ohm or 0.06
+            }])
+            fault_status = pred.get("predicted_fault", "NORMAL")
+        except Exception:
+            fault_status = "NORMAL"
+
     # 3. Create and persist Measurement entity
     measurement = Measurement(
         test_session_id=session.id,
@@ -80,8 +105,11 @@ async def process_incoming_measurement(
         current_a=current_a,
         power_w=power_w,
         temperature_c=temp_c,
+        humidity_pct=humidity_pct,
         voltage_drop_v=voltage_drop_v,
         effective_resistance_ohm=effective_resistance_ohm,
+        voltage_stability=voltage_stability,
+        fault_status=fault_status,
         measurement_valid=is_valid,
         validity_reason=validity_reason
     )
@@ -95,13 +123,30 @@ async def process_incoming_measurement(
     # Persist any immediate alerts triggered
     new_alerts = []
     for alert_data in diagnostic_eval.alerts_triggered:
+        category_map = {
+            "OVERHEAT_CRITICAL": "HIGH_TEMPERATURE",
+            "OVERHEAT_WARNING": "HIGH_TEMPERATURE",
+            "OVERCURRENT_CRITICAL": "OVERCURRENT",
+            "OVERCURRENT_WARNING": "OVERCURRENT",
+            "VOLTAGE_UNDER_CRITICAL": "CRITICAL_UNDERVOLTAGE",
+            "VOLTAGE_UNDER_WARNING": "CRITICAL_UNDERVOLTAGE",
+            "VOLTAGE_OVER_CRITICAL": "OVERVOLTAGE",
+            "VOLTAGE_OVER_WARNING": "OVERVOLTAGE",
+            "HIGH_RESISTANCE_WARNING": "VOLTAGE_INSTABILITY",
+            "HIGH_RESISTANCE_CRITICAL": "VOLTAGE_INSTABILITY"
+        }
+        category = category_map.get(alert_data.get("code"), "GENERAL")
         alert = Alert(
             test_session_id=session.id,
+            device_id=session.device_id,
+            category=category,
             severity=alert_data["severity"],
             code=alert_data["code"],
             message=alert_data["message"],
             observed_value=alert_data.get("observed_value"),
             threshold_value=alert_data.get("threshold_value"),
+            recommended_action=alert_data.get("recommended_action") or "Inspect physical cable connection and test fixture.",
+            resolution_status="active",
             created_at=utc_now()
         )
         db.add(alert)
@@ -132,6 +177,9 @@ async def process_incoming_measurement(
             "current_a": measurement.current_a,
             "power_w": measurement.power_w,
             "temperature_c": measurement.temperature_c,
+            "humidity_pct": measurement.humidity_pct,
+            "voltage_stability": measurement.voltage_stability,
+            "fault_status": measurement.fault_status,
             "voltage_drop_v": measurement.voltage_drop_v,
             "effective_resistance_ohm": measurement.effective_resistance_ohm,
             "measurement_valid": measurement.measurement_valid,

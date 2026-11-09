@@ -30,6 +30,46 @@ class DeviceResponse(DeviceBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class SerialPortInfo(BaseModel):
+    device: str
+    description: str
+    hwid: str
+    is_esp: bool = False
+
+class DeviceHeartbeatRequest(BaseModel):
+    device_id: str
+    port: Optional[str] = None
+    status: str = Field("online", pattern="^(online|offline)$")
+    firmware_version: Optional[str] = None
+    sensor_status: Optional[Dict[str, str]] = None
+    last_error: Optional[str] = None
+
+class DeviceCommandResponse(BaseModel):
+    command: Optional[str] = None
+    cable_id: Optional[str] = None
+    test_id: Optional[str] = None
+    reason: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+
+class BridgeConnectRequest(BaseModel):
+    port: Optional[str] = None
+    baud: int = 115200
+    force_unlock: bool = True
+    device_id: Optional[str] = "cg-esp32-001"
+
+class BridgeStatusResponse(BaseModel):
+    connected: bool
+    port: Optional[str] = None
+    baud: int = 115200
+    device_id: str = "cg-esp32-001"
+    firmware_version: str = "cg-fw-1.2.0"
+    sensor_status: Dict[str, str] = Field(default_factory=dict)
+    last_seen_at: Optional[str] = None
+    last_error: Optional[str] = None
+    rx_frame_count: int = 0
+    active_test_id: Optional[str] = None
+
+
 
 # ==================== CABLE SCHEMAS ====================
 class CableBase(BaseModel):
@@ -39,6 +79,10 @@ class CableBase(BaseModel):
     manufacturer_metadata: str = Field(..., min_length=1, max_length=128)
     rated_power_w: Optional[float] = Field(None, ge=0.0, le=240.0)
     rated_current_a: Optional[float] = Field(None, ge=0.0, le=10.0)
+    rated_voltage_v: Optional[float] = Field(None, ge=0.0, le=100.0)
+    length_m: Optional[float] = Field(None, ge=0.0, le=50.0)
+    serial_number: Optional[str] = Field(None, max_length=64)
+    purchase_date: Optional[str] = Field(None, max_length=32)
     notes: Optional[str] = None
 
 class CableCreate(CableBase):
@@ -51,6 +95,10 @@ class CableUpdate(BaseModel):
     manufacturer_metadata: Optional[str] = Field(None, min_length=1, max_length=128)
     rated_power_w: Optional[float] = Field(None, ge=0.0, le=240.0)
     rated_current_a: Optional[float] = Field(None, ge=0.0, le=10.0)
+    rated_voltage_v: Optional[float] = Field(None, ge=0.0, le=100.0)
+    length_m: Optional[float] = Field(None, ge=0.0, le=50.0)
+    serial_number: Optional[str] = Field(None, max_length=64)
+    purchase_date: Optional[str] = Field(None, max_length=32)
     notes: Optional[str] = None
 
 class CableResponse(CableBase):
@@ -79,6 +127,9 @@ class MeasurementIngestContract(BaseModel):
     current_a: Optional[float] = Field(None, description="Measured current in Amperes")
     power_w: Optional[float] = Field(None, description="Power in Watts (can be computed or verified)")
     temperature_c: Optional[float] = Field(None, description="Measured cable surface temperature in °C")
+    humidity_pct: Optional[float] = Field(None, ge=0.0, le=100.0, description="Ambient or enclosure humidity percentage")
+    voltage_stability: Optional[float] = Field(None, description="Voltage stability deviation index")
+    fault_status: Optional[str] = Field("NORMAL", description="Current detected fault code")
     measurement_valid: bool = Field(True, description="Sensor health validity flag")
     validity_reason: Optional[str] = Field(None, max_length=256)
 
@@ -121,8 +172,11 @@ class MeasurementResponse(BaseModel):
     current_a: Optional[float]
     power_w: Optional[float]
     temperature_c: Optional[float]
+    humidity_pct: Optional[float] = None
     voltage_drop_v: Optional[float]
     effective_resistance_ohm: Optional[float]
+    voltage_stability: Optional[float] = None
+    fault_status: str = "NORMAL"
     measurement_valid: bool
     validity_reason: Optional[str]
 
@@ -133,18 +187,26 @@ class MeasurementResponse(BaseModel):
 class AlertResponse(BaseModel):
     id: int
     test_session_id: int
+    device_id: Optional[str] = None
+    category: str = "GENERAL"
     severity: str
     code: str
     message: str
     observed_value: Optional[float]
     threshold_value: Optional[float]
+    recommended_action: Optional[str] = None
+    resolution_status: str = "active"
     created_at: datetime
-    acknowledged_at: Optional[datetime]
+    acknowledged_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 class AlertAcknowledgeRequest(BaseModel):
     acknowledged: bool = True
+
+class AlertResolveRequest(BaseModel):
+    resolution_notes: Optional[str] = None
 
 
 # ==================== ANALYSIS RESULT SCHEMAS ====================
@@ -171,6 +233,12 @@ class TestStartRequest(BaseModel):
 
 class TestStopRequest(BaseModel):
     reason: Optional[str] = "User requested stop"
+
+class TestControlRequest(BaseModel):
+    load_current_a: Optional[float] = Field(None, ge=0.1, le=5.0, description="Dynamic target load current in Amperes")
+    thermal_stress: Optional[bool] = Field(None, description="Trigger thermal runaway / overheat")
+    flex_stress: Optional[bool] = Field(None, description="Trigger cable flexing / contact ripple")
+    simulated_scenario: Optional[str] = Field(None, description="Switch simulated scenario dynamically")
 
 class TestSessionResponse(BaseModel):
     id: int
@@ -251,9 +319,181 @@ class DashboardSummaryResponse(BaseModel):
     warning_count: int
     critical_count: int
     insufficient_data_count: int
+    connected_hardware_devices: int = 0
+    active_tests_count: int = 0
+    completed_tests_count: int = 0
+    avg_health_score: Optional[float] = None
+    cables_requiring_attention: int = 0
     active_test: Optional[TestSessionSummary] = None
     latest_completed_test: Optional[TestSessionSummary] = None
     latest_alerts: List[AlertResponse] = []
+    recent_activity: List[Dict[str, Any]] = []
     connection_mode: str = "demo"
     current_device_id: Optional[str] = None
     current_device_online: bool = False
+
+
+# ==================== AUTH SCHEMAS ====================
+class UserBase(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
+    email: str = Field(..., min_length=5, max_length=128)
+    full_name: Optional[str] = Field(None, max_length=128)
+    role: str = Field("engineer", pattern="^(admin|engineer|viewer)$")
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6, max_length=128)
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserResponse
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+# ==================== DEVICE CONFIGURATION SCHEMAS ====================
+class DeviceConfigurationBase(BaseModel):
+    voltage_divider_ratio: float = 1.0
+    acs712_sensitivity_mv_per_a: float = 185.0
+    acs712_zero_v_offset: float = 2.50
+    temp_offset_c: float = 0.0
+    humidity_offset_pct: float = 0.0
+    dht_installed: bool = True
+
+class DeviceConfigurationUpdate(BaseModel):
+    voltage_divider_ratio: Optional[float] = Field(None, ge=0.1, le=20.0)
+    acs712_sensitivity_mv_per_a: Optional[float] = Field(None, ge=10.0, le=500.0)
+    acs712_zero_v_offset: Optional[float] = Field(None, ge=1.0, le=4.0)
+    temp_offset_c: Optional[float] = Field(None, ge=-20.0, le=20.0)
+    humidity_offset_pct: Optional[float] = Field(None, ge=-30.0, le=30.0)
+    dht_installed: Optional[bool] = None
+
+class DeviceConfigurationResponse(DeviceConfigurationBase):
+    id: int
+    device_id: str
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== MAINTENANCE RECORD SCHEMAS ====================
+class MaintenanceRecordCreate(BaseModel):
+    device_id: Optional[str] = None
+    cable_id: Optional[str] = None
+    issue_detected: str = Field(..., min_length=3, max_length=256)
+    severity: str = Field("warning", pattern="^(info|warning|critical)$")
+    supporting_measurements: Optional[Dict[str, Any]] = None
+    possible_causes: Optional[str] = None
+    recommended_inspection: Optional[str] = None
+    action_taken: Optional[str] = None
+
+class MaintenanceRecordUpdate(BaseModel):
+    issue_detected: Optional[str] = None
+    severity: Optional[str] = None
+    action_taken: Optional[str] = None
+    status: Optional[str] = Field(None, pattern="^(pending|in_progress|resolved)$")
+
+class MaintenanceRecordResponse(BaseModel):
+    id: int
+    device_id: Optional[str]
+    cable_id: Optional[str]
+    issue_detected: str
+    severity: str
+    supporting_measurements: Optional[str] = None
+    possible_causes: Optional[str] = None
+    recommended_inspection: Optional[str] = None
+    action_taken: Optional[str] = None
+    status: str
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== ML & INTELLIGENCE SCHEMAS ====================
+class MLModelMetadataResponse(BaseModel):
+    id: int
+    model_type: str
+    version: str
+    algorithm: str
+    metrics: Optional[Dict[str, Any]] = None
+    parameters: Optional[Dict[str, Any]] = None
+    is_active: bool
+    trained_at: Optional[datetime] = None
+    file_path: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class MLAnomalyDetectionResponse(BaseModel):
+    is_anomaly: bool
+    anomaly_score: float  # 0 to 100, where higher means more anomalous
+    confidence: float
+    contributing_features: Dict[str, float]
+    explanation: str
+
+class MLFaultClassificationResponse(BaseModel):
+    predicted_fault: str  # NORMAL, UNDERVOLTAGE, OVERVOLTAGE, OVERCURRENT, OVERHEATING, VOLTAGE_INSTABILITY, CONNECTION_PROBLEM
+    confidence: float
+    class_probabilities: Dict[str, float]
+    rule_fallback_active: bool
+    explanation: str
+
+class MLPredictiveMaintenanceResponse(BaseModel):
+    degradation_risk_score: float  # 0 to 100
+    risk_category: str  # Nominal, Moderate Degradation, Severe Degradation, Critical Wear
+    degradation_indicators: Dict[str, Any]
+    estimated_remaining_cycles: Optional[int] = None
+    confidence: float
+    limitations: str
+
+class MLRetrainRequest(BaseModel):
+    model_type: str = Field("all", pattern="^(all|anomaly_detection|fault_classification)$")
+    sample_size: int = Field(500, ge=50, le=10000)
+
+class MLRetrainResponse(BaseModel):
+    status: str
+    models_trained: List[str]
+    metrics: Dict[str, Any]
+    message: str
+
+
+# ==================== AI ASSISTANT SCHEMAS ====================
+class AssistantMessageRequest(BaseModel):
+    query: str = Field(..., min_length=2, max_length=2000)
+    test_id: Optional[str] = None
+    device_id: Optional[str] = None
+    cable_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+class AssistantMessageResponse(BaseModel):
+    session_id: str
+    response: str
+    context_used: Dict[str, Any]
+    detected_risks: List[str]
+    recommendations: List[str]
+    provider: str
+

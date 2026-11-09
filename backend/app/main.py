@@ -1,5 +1,6 @@
 """Main FastAPI application entrypoint for ChargeGuard AI Pro."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,11 +18,20 @@ setup_logging()
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle handler."""
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}...")
+    from app.services.simulator import simulator_service
+    from app.services.hardware_bridge import hardware_bridge_service
+    simulator_service.loop = asyncio.get_running_loop()
+    hardware_bridge_service.loop = asyncio.get_running_loop()
     # Initialize database and seed tables
     init_db()
+    from app.db.database import SessionLocal
+    from app.ml.model_manager import MLModelManager
+    with SessionLocal() as db:
+        MLModelManager.sync_models_to_db(db)
     logger.info(f"{settings.PROJECT_NAME} started successfully.")
     yield
     logger.info(f"Shutting down {settings.PROJECT_NAME}...")
+    hardware_bridge_service.disconnect()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

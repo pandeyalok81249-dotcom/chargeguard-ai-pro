@@ -57,3 +57,7 @@ htmlcov/
 *~
 .DS_Store
 Thumbs.db
+
+# Archives
+*.zip
+staging_android/

@@ -9,6 +9,9 @@ import { CableHealthReportPage } from './pages/CableHealthReportPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { DeviceManagementPage } from './pages/DeviceManagementPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { MLInsightsPage } from './pages/MLInsightsPage';
+import { AIAssistantPage } from './pages/AIAssistantPage';
+import { MaintenancePage } from './pages/MaintenancePage';
 import { api } from './api/client';
 import { DashboardSummary } from './types';
 
@@ -37,6 +40,9 @@ export function App() {
           <Route path="cables" element={<CableInventoryPage />} />
           <Route path="history" element={<TestHistoryPage />} />
           <Route path="report/:testId" element={<CableHealthReportPage />} />
+          <Route path="ml" element={<MLInsightsPage />} />
+          <Route path="assistant" element={<AIAssistantPage />} />
+          <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="diagnostics" element={<DiagnosticsPage />} />
           <Route path="devices" element={<DeviceManagementPage />} />
           <Route path="settings" element={<SettingsPage />} />

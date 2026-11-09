@@ -89,6 +89,51 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     device_id = device.device_id if device else None
     device_online = device.online_status if device else False
 
+    # Connected hardware devices
+    connected_hw_devices = db.query(Device).filter(
+        Device.connection_mode == "hardware",
+        Device.online_status == True
+    ).count()
+
+    active_tests_count = db.query(TestSession).filter(TestSession.status == "running").count()
+    completed_tests_count = db.query(TestSession).filter(TestSession.status.in_(["completed", "stopped"])).count()
+
+    # Average health score across all evaluated tests
+    avg_health_score_raw = db.query(func.avg(AnalysisResult.health_score)).filter(AnalysisResult.health_score.isnot(None)).scalar()
+    avg_health_score = round(float(avg_health_score_raw), 1) if avg_health_score_raw is not None else None
+
+    # Cables requiring attention: distinct cables whose latest test was 'warning' or 'critical'
+    cables = db.query(Cable).all()
+    cables_needing_attention = 0
+    for c in cables:
+        last_test = db.query(TestSession).filter(TestSession.cable_id == c.cable_id).order_by(TestSession.started_at.desc()).first()
+        if last_test and last_test.final_result in ["warning", "critical"]:
+            cables_needing_attention += 1
+
+    # Recent Activity Feed (combining recent tests and alerts chronologically)
+    recent_activity = []
+    recent_sessions = db.query(TestSession).order_by(TestSession.started_at.desc()).limit(5).all()
+    for s in recent_sessions:
+        cable_name = s.cable.display_name if s.cable else s.cable_id
+        recent_activity.append({
+            "type": "test_session",
+            "title": f"Test {s.test_id}",
+            "description": f"{cable_name} ({s.mode.upper()}) - {s.final_result or s.status}",
+            "severity": "critical" if s.final_result == "critical" else "warning" if s.final_result == "warning" else "info",
+            "timestamp": s.started_at.isoformat() if s.started_at else None
+        })
+    recent_alert_rows = db.query(Alert).order_by(Alert.created_at.desc()).limit(5).all()
+    for a in recent_alert_rows:
+        recent_activity.append({
+            "type": "alert",
+            "title": f"Alert: {a.code}",
+            "description": a.message,
+            "severity": a.severity,
+            "timestamp": a.created_at.isoformat() if a.created_at else None
+        })
+    recent_activity.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+    recent_activity = recent_activity[:8]
+
     return DashboardSummaryResponse(
         total_cables=total_cables,
         total_tests=total_tests,
@@ -96,9 +141,15 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         warning_count=warning_count,
         critical_count=critical_count,
         insufficient_data_count=insufficient_count,
+        connected_hardware_devices=connected_hw_devices,
+        active_tests_count=active_tests_count,
+        completed_tests_count=completed_tests_count,
+        avg_health_score=avg_health_score,
+        cables_requiring_attention=cables_needing_attention,
         active_test=active_test,
         latest_completed_test=latest_completed,
         latest_alerts=latest_alerts,
+        recent_activity=recent_activity,
         connection_mode=current_mode,
         current_device_id=device_id,
         current_device_online=device_online

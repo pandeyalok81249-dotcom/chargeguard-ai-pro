@@ -37,6 +37,14 @@ def test_test_lifecycle_and_report(client):
     measurements = res.json()
     assert len(measurements) >= 5
 
+    # Test dynamic physics tuning control
+    ctrl_res = client.post(f"/api/tests/{test_id}/control", json={
+        "load_current_a": 2.2,
+        "thermal_stress": True
+    })
+    assert ctrl_res.status_code == 200
+    assert ctrl_res.json()["status"] == "updated"
+
     # 4. Stop test
     res = client.post(f"/api/tests/{test_id}/stop", json={"reason": "User completed verification"})
     assert res.status_code == 200

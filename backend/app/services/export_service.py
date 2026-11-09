@@ -4,13 +4,15 @@ import csv
 import io
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import String
 from app.models import TestSession, Measurement, Cable, Device
 
 def export_tests_to_csv(
     db: Session,
     cable_id: Optional[str] = None,
     mode: Optional[str] = None,
-    result_filter: Optional[str] = None
+    result_filter: Optional[str] = None,
+    date: Optional[str] = None
 ) -> str:
     """
     Generate CSV content containing actual persisted test session summaries
@@ -24,6 +26,8 @@ def export_tests_to_csv(
         query = query.filter(TestSession.mode == mode)
     if result_filter:
         query = query.filter(TestSession.final_result == result_filter)
+    if date:
+        query = query.filter(TestSession.started_at.cast(String).like(f"{date}%"))
 
     sessions = query.order_by(TestSession.started_at.desc()).all()
 

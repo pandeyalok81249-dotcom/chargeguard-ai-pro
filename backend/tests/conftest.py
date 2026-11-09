@@ -20,6 +20,15 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+@pytest.fixture(scope="function", autouse=True)
+def patch_simulator_session():
+    """Ensure background simulator worker tasks use the test in-memory database."""
+    import app.services.simulator as sim_mod
+    orig_session = sim_mod.SessionLocal
+    sim_mod.SessionLocal = TestingSessionLocal
+    yield
+    sim_mod.SessionLocal = orig_session
+
 @pytest.fixture(scope="function")
 def db_session():
     """Create a fresh database for each test."""

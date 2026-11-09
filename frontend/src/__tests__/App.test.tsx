@@ -44,7 +44,10 @@ vi.mock('../api/client', () => ({
       baud_rate: 115200,
     }),
     getExportCsvUrl: vi.fn().mockReturnValue('/api/export/tests.csv'),
-    getSingleTestExportCsvUrl: vi.fn().mockReturnValue('/api/export/tests/t1/measurements.csv')
+    getSingleTestExportCsvUrl: vi.fn().mockReturnValue('/api/export/tests/t1/measurements.csv'),
+    getSerialPorts: vi.fn().mockResolvedValue([
+      { device: 'COM3', description: 'Silicon Labs CP210x USB to UART Bridge', hwid: 'USB\\VID_10C4&PID_EA60', is_esp: true }
+    ])
   },
 }));
 
@@ -76,5 +79,12 @@ describe('ChargeGuard AI Pro Frontend Smoke & Navigation Tests', () => {
       expect(screen.getByText('Registered Cables')).toBeInTheDocument();
       expect(screen.getByText('Tests Run')).toBeInTheDocument();
     });
+  });
+
+  it('clearly distinguishes demo mode and hardware rig in navigation and sidebar', async () => {
+    render(<App />);
+
+    expect(screen.getByText('DEMO (Simulator)')).toBeInTheDocument();
+    expect(screen.getByText('Device Management')).toBeInTheDocument();
   });
 });

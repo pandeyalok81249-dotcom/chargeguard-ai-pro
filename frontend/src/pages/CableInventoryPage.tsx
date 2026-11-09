@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -8,18 +9,32 @@ import {
   Info,
   CheckCircle2,
   AlertCircle,
-  AlertOctagon
+  AlertOctagon,
+  ArrowUpDown,
+  FileText,
+  Clock,
+  Zap,
+  Eye,
+  X
 } from 'lucide-react';
 import { api } from '../api/client';
-import { Cable } from '../types';
+import { Cable, TestSessionSummary } from '../types';
 
 export const CableInventoryPage: React.FC = () => {
+  const navigate = useNavigate();
   const [cables, setCables] = useState<Cable[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [connectorFilter, setConnectorFilter] = useState('');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedCable, setSelectedCable] = useState<Cable | null>(null);
+  const [detailsCable, setDetailsCable] = useState<Cable | null>(null);
+  const [detailsTests, setDetailsTests] = useState<TestSessionSummary[]>([]);
+  const [isLoadingDetailsTests, setIsLoadingDetailsTests] = useState(false);
+  
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -32,18 +47,22 @@ export const CableInventoryPage: React.FC = () => {
     manufacturer_metadata: '',
     rated_power_w: 60,
     rated_current_a: 3.0,
+    rated_voltage_v: 5.0,
+    length_m: 1.0,
+    serial_number: '',
+    purchase_date: '',
     notes: '',
   });
 
   const loadCables = () => {
-    api.getCables(searchQuery, connectorFilter)
+    api.getCables(searchQuery, connectorFilter, sortBy, sortOrder)
       .then(setCables)
       .catch((err) => console.error('Error fetching cables:', err));
   };
 
   useEffect(() => {
     loadCables();
-  }, [searchQuery, connectorFilter]);
+  }, [searchQuery, connectorFilter, sortBy, sortOrder]);
 
   const handleOpenAdd = () => {
     setIsEditMode(false);
@@ -56,6 +75,10 @@ export const CableInventoryPage: React.FC = () => {
       manufacturer_metadata: 'User Provided',
       rated_power_w: 60,
       rated_current_a: 3.0,
+      rated_voltage_v: 5.0,
+      length_m: 1.0,
+      serial_number: '',
+      purchase_date: new Date().toISOString().split('T')[0],
       notes: '',
     });
     setErrorMessage(null);
@@ -73,10 +96,23 @@ export const CableInventoryPage: React.FC = () => {
       manufacturer_metadata: cable.manufacturer_metadata,
       rated_power_w: cable.rated_power_w ?? 60,
       rated_current_a: cable.rated_current_a ?? 3.0,
+      rated_voltage_v: cable.rated_voltage_v ?? 5.0,
+      length_m: cable.length_m ?? 1.0,
+      serial_number: cable.serial_number ?? '',
+      purchase_date: cable.purchase_date ?? '',
       notes: cable.notes ?? '',
     });
     setErrorMessage(null);
     setIsModalOpen(true);
+  };
+
+  const handleOpenDetails = (cable: Cable) => {
+    setDetailsCable(cable);
+    setIsLoadingDetailsTests(true);
+    api.getTests({ cable_id: cable.cable_id, limit: 10 })
+      .then(setDetailsTests)
+      .catch((err) => console.error('Error loading cable test history:', err))
+      .finally(() => setIsLoadingDetailsTests(false));
   };
 
   const handleSaveCable = async (e: React.FormEvent) => {
@@ -100,6 +136,9 @@ export const CableInventoryPage: React.FC = () => {
     try {
       await api.deleteCable(cableId);
       setDeleteConfirmId(null);
+      if (detailsCable?.cable_id === cableId) {
+        setDetailsCable(null);
+      }
       loadCables();
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to delete cable.');
@@ -143,31 +182,51 @@ export const CableInventoryPage: React.FC = () => {
       </div>
 
       {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-3 items-center">
+        <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search by ID, name, or manufacturer..."
+            placeholder="Search by ID, name, manufacturer, or serial..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#111827] border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-500" />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="w-4 h-4 text-slate-500 shrink-0" />
           <select
             value={connectorFilter}
             onChange={(e) => setConnectorFilter(e.target.value)}
             className="bg-[#111827] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
           >
-            <option value="">All Connector Types</option>
+            <option value="">All Connectors</option>
             <option value="USB-C to USB-C">USB-C to USB-C</option>
             <option value="USB-A to USB-C">USB-A to USB-C</option>
             <option value="USB-C to Lightning">USB-C to Lightning</option>
             <option value="Micro-USB to USB-A">Micro-USB to USB-A</option>
           </select>
+
+          <ArrowUpDown className="w-4 h-4 text-slate-500 shrink-0 ml-1" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-[#111827] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+          >
+            <option value="created_at">Date Added</option>
+            <option value="display_name">Cable Name</option>
+            <option value="rated_power_w">Rated Power</option>
+            <option value="length_m">Length</option>
+          </select>
+
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="px-2.5 py-2 bg-[#111827] border border-slate-800 rounded-lg text-xs text-slate-300 hover:text-white"
+            title={`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`}
+          >
+            {sortOrder.toUpperCase()}
+          </button>
         </div>
       </div>
 
@@ -176,7 +235,7 @@ export const CableInventoryPage: React.FC = () => {
         {cables.map((c) => (
           <div
             key={c.cable_id}
-            className="p-5 rounded-xl bg-[#111827] border border-slate-800 shadow-sm flex flex-col justify-between hover:border-slate-700 transition-colors"
+            className="floating-card p-5 flex flex-col justify-between"
           >
             <div>
               <div className="flex items-start justify-between">
@@ -200,10 +259,17 @@ export const CableInventoryPage: React.FC = () => {
                   <span className="text-slate-200 font-medium">
                     {c.rated_power_w ? `${c.rated_power_w}W` : 'Unrated'} /{' '}
                     {c.rated_current_a ? `${c.rated_current_a}A` : 'Unrated'}
+                    {c.rated_voltage_v ? ` (${c.rated_voltage_v}V)` : ''}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Metadata Source:</span>
+                  <span>Length & Serial:</span>
+                  <span className="text-slate-200 font-medium">
+                    {c.length_m ? `${c.length_m}m` : '1.0m'} | {c.serial_number || 'N/A'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Manufacturer:</span>
                   <span className="text-[11px] text-slate-400 italic font-mono truncate max-w-[150px]">
                     {c.manufacturer_metadata}
                   </span>
@@ -219,9 +285,13 @@ export const CableInventoryPage: React.FC = () => {
 
             {/* Actions */}
             <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-              <span className="text-[10px] text-slate-500 font-mono">
-                Added {new Date(c.created_at).toLocaleDateString()}
-              </span>
+              <button
+                onClick={() => handleOpenDetails(c)}
+                className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Details & History</span>
+              </button>
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => handleOpenEdit(c)}
@@ -353,6 +423,53 @@ export const CableInventoryPage: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">Rated Voltage (V)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={formData.rated_voltage_v}
+                    onChange={(e) => setFormData({ ...formData, rated_voltage_v: parseFloat(e.target.value) || 5.0 })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                    placeholder="e.g. 5.0 or 20.0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">Cable Length (m)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formData.length_m}
+                    onChange={(e) => setFormData({ ...formData, length_m: parseFloat(e.target.value) || 1.0 })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                    placeholder="e.g. 1.0, 1.8, 2.0"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">Serial Number</label>
+                  <input
+                    type="text"
+                    value={formData.serial_number}
+                    onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                    placeholder="e.g. SN-883921A"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">Purchase Date</label>
+                  <input
+                    type="date"
+                    value={formData.purchase_date}
+                    onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Notes / Physical Condition</label>
                 <textarea
@@ -408,6 +525,157 @@ export const CableInventoryPage: React.FC = () => {
                 className="px-3 py-1.5 rounded bg-rose-600 text-white text-xs font-bold hover:bg-rose-500 cursor-pointer shadow-sm shadow-rose-950"
               >
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cable Details & History Modal */}
+      {detailsCable && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#111827] border border-slate-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-white">{detailsCable.display_name}</h3>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300">
+                    {detailsCable.connector_type}
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-slate-400 mt-0.5">{detailsCable.cable_id}</div>
+              </div>
+              <button
+                onClick={() => setDetailsCable(null)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Specifications Matrix */}
+            <div>
+              <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide mb-2">
+                Stored Specifications
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-900/80 p-3.5 rounded-lg border border-slate-800 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Manufacturer</span>
+                  <span className="text-slate-200 font-medium">{detailsCable.manufacturer_metadata}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Serial Number</span>
+                  <span className="text-slate-200 font-mono">{detailsCable.serial_number || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Cable Length</span>
+                  <span className="text-slate-200 font-medium">{detailsCable.length_m ? `${detailsCable.length_m} m` : '1.0 m'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Rated Power / Current</span>
+                  <span className="text-slate-200 font-medium">
+                    {detailsCable.rated_power_w ?? 60}W / {detailsCable.rated_current_a ?? 3.0}A
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Rated Voltage</span>
+                  <span className="text-slate-200 font-medium">{detailsCable.rated_voltage_v ?? 5.0} V</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Purchase Date</span>
+                  <span className="text-slate-200">{detailsCable.purchase_date || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Jacket / Build</span>
+                  <span className="text-slate-200">{detailsCable.cable_type}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-[10px] text-slate-500 block">Notes</span>
+                  <span className="text-slate-300 italic">{detailsCable.notes || 'No notes provided.'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Test History for this cable */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                  Previous Test Results ({detailsTests.length})
+                </h4>
+                <button
+                  onClick={() => {
+                    navigate(`/testing?cable=${detailsCable.cable_id}`);
+                  }}
+                  className="px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Launch Test</span>
+                </button>
+              </div>
+
+              {isLoadingDetailsTests ? (
+                <div className="py-6 text-center text-xs text-slate-500">Loading test history...</div>
+              ) : detailsTests.length > 0 ? (
+                <div className="border border-slate-800 rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-[10px] text-slate-400 uppercase">
+                      <tr>
+                        <th className="py-2 px-3">Test ID / Date</th>
+                        <th className="py-2 px-3">Mode</th>
+                        <th className="py-2 px-3">Result</th>
+                        <th className="py-2 px-3">Health Score</th>
+                        <th className="py-2 px-3 text-right">Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                      {detailsTests.map((t) => (
+                        <tr key={t.test_id} className="hover:bg-slate-800/40">
+                          <td className="py-2 px-3 font-mono text-[11px] text-slate-300">
+                            <div>{t.test_id}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {new Date(t.started_at).toLocaleDateString()}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 uppercase text-[10px] font-mono text-slate-400">{t.mode}</td>
+                          <td className="py-2 px-3">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              t.final_result === 'healthy' ? 'bg-emerald-950 text-emerald-300' :
+                              t.final_result === 'warning' ? 'bg-amber-950 text-amber-300' :
+                              t.final_result === 'critical' ? 'bg-rose-950 text-rose-300' :
+                              'bg-slate-800 text-slate-400'
+                            }`}>
+                              {(t.final_result || t.status).toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-mono">
+                            {t.health_score != null ? `${t.health_score}/100` : '--'}
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              onClick={() => navigate(`/report/${t.test_id}`)}
+                              className="text-cyan-400 hover:text-cyan-300 text-[11px] underline"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-900/50 rounded-lg text-center text-xs text-slate-500 border border-slate-800">
+                  No tests recorded for this cable yet.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setDetailsCable(null)}
+                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

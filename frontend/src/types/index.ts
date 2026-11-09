@@ -18,6 +18,10 @@ export interface Cable {
   manufacturer_metadata: string;
   rated_power_w?: number | null;
   rated_current_a?: number | null;
+  rated_voltage_v?: number | null;
+  length_m?: number | null;
+  serial_number?: string | null;
+  purchase_date?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
@@ -103,9 +107,21 @@ export interface DashboardSummary {
   warning_count: number;
   critical_count: number;
   insufficient_data_count: number;
+  connected_hardware_devices?: number;
+  active_tests_count?: number;
+  completed_tests_count?: number;
+  avg_health_score?: number | null;
+  cables_requiring_attention?: number;
   active_test?: TestSessionSummary | null;
   latest_completed_test?: TestSessionSummary | null;
   latest_alerts: Alert[];
+  recent_activity?: Array<{
+    type: string;
+    title: string;
+    description: string;
+    severity: string;
+    timestamp?: string | null;
+  }>;
   connection_mode: 'demo' | 'hardware';
   current_device_id?: string | null;
   current_device_online: boolean;
@@ -127,4 +143,175 @@ export interface SystemSettings {
   sampling_interval_ms: number;
   serial_port: string;
   baud_rate: number;
+}
+
+export interface SerialPortInfo {
+  device: string;
+  description: string;
+  hwid: string;
+  is_esp: boolean;
+}
+
+export interface DeviceStatusPayload {
+  device_id: string;
+  online_status: boolean;
+  last_seen_at?: string | null;
+  port?: string | null;
+  sensor_status?: Record<string, string> | null;
+  last_error?: string | null;
+  firmware_version?: string | null;
+}
+
+export interface BridgeStatus {
+  connected: boolean;
+  port?: string | null;
+  baud: number;
+  device_id: string;
+  firmware_version: string;
+  sensor_status: Record<string, string>;
+  last_seen_at?: string | null;
+  last_error?: string | null;
+  rx_frame_count: number;
+  active_test_id?: string | null;
+}
+
+// ==================== AUTHENTICATION & USER ====================
+export interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  role: 'admin' | 'engineer' | 'operator' | 'viewer';
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface UserProfileUpdate {
+  full_name?: string;
+  email?: string;
+}
+
+// ==================== SENSOR CALIBRATION CONFIG ====================
+export interface DeviceConfiguration {
+  id: number;
+  device_id: string;
+  voltage_divider_ratio: number;
+  acs712_sensitivity_mv_per_a: number;
+  acs712_zero_v_offset: number;
+  temp_offset_c: number;
+  humidity_offset_pct: number;
+  dht_installed: boolean;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceConfigurationUpdate {
+  voltage_divider_ratio?: number;
+  acs712_sensitivity_mv_per_a?: number;
+  acs712_zero_v_offset?: number;
+  temp_offset_c?: number;
+  humidity_offset_pct?: number;
+  dht_installed?: boolean;
+  notes?: string | null;
+}
+
+// ==================== MACHINE LEARNING ====================
+export interface MLModelMetadata {
+  id: number;
+  model_type: string;
+  version: string;
+  algorithm: string;
+  metrics?: Record<string, any> | null;
+  parameters?: Record<string, any> | null;
+  is_active: boolean;
+  trained_at?: string | null;
+  file_path?: string | null;
+}
+
+export interface MLAnomalyDetectionResponse {
+  is_anomaly: boolean;
+  anomaly_score: number;
+  confidence: number;
+  contributing_features: Record<string, number>;
+  explanation: string;
+}
+
+export interface MLFaultClassificationResponse {
+  predicted_fault: string;
+  confidence: number;
+  class_probabilities: Record<string, number>;
+  rule_fallback_active: boolean;
+  explanation: string;
+}
+
+export interface MLPredictiveMaintenanceResponse {
+  degradation_risk_score: number;
+  risk_category: string;
+  degradation_indicators: {
+    resistance_growth_pct?: number;
+    thermal_rise_rate?: number;
+    voltage_stability_variance?: number;
+    cycle_stress_factor?: number;
+    [key: string]: any;
+  };
+  estimated_remaining_cycles?: number | null;
+  confidence: number;
+  limitations: string;
+}
+
+export interface MLRetrainResponse {
+  status: string;
+  models_trained: string[];
+  metrics: Record<string, any>;
+  message: string;
+}
+
+// ==================== MAINTENANCE CENTER ====================
+export interface MaintenanceRecommendation {
+  id: string;
+  cable_id: string;
+  cable_name: string;
+  category: 'cleaning' | 'contact_inspection' | 'strain_relief' | 'retire' | 'thermal_remediation';
+  priority: 'low' | 'medium' | 'high' | 'immediate';
+  title: string;
+  action_needed: string;
+  rationale: string;
+  observed_metric: string;
+}
+
+export interface MaintenanceRecord {
+  id: number;
+  cable_id: string;
+  performed_by: string;
+  action_type: 'cleaning' | 'connector_repair' | 'strain_relief_replacement' | 'quarantine' | 'decommission' | 'inspection_pass';
+  notes: string;
+  resolved: boolean;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+// ==================== AI ASSISTANT ====================
+export interface AssistantMessageResponse {
+  session_id: string;
+  response: string;
+  context_used: Record<string, any>;
+  detected_risks: string[];
+  recommendations: string[];
+  provider: string;
+}
+
+export interface DiagnosticConversationRecord {
+  id: number;
+  session_id: string;
+  user_query: string;
+  assistant_response: string;
+  context_summary?: string | null;
+  created_at: string;
 }

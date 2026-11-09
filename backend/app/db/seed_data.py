@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.datetime_utils import utc_now
 
 from app.models import (
-    Device, Cable, TestSession, Measurement, Alert, AnalysisResult
+    Device, DeviceConfiguration, Cable, TestSession, Measurement, Alert, AnalysisResult, User, MaintenanceRecord, MLModelMetadata
 )
+from app.core.security import hash_password
 from app.core.logging import logger
 
 def seed_database(db: Session, force_reset_demo: bool = False):
-    """Seed initial demonstration hardware devices, cables, and test history."""
+    """Seed initial demonstration hardware devices, cables, users, and test history."""
     if force_reset_demo:
         logger.info("Purging existing demo test sessions and measurements...")
         # Delete demo sessions (cascade deletes measurements, alerts, analysis_result)
@@ -20,7 +21,33 @@ def seed_database(db: Session, force_reset_demo: bool = False):
             db.delete(ds)
         db.commit()
 
-    # 1. Devices
+    # 0. Seed Users
+    admin_user = db.query(User).filter(User.username == "admin").first()
+    if not admin_user:
+        admin_user = User(
+            username="admin",
+            email="admin@chargeguard.io",
+            full_name="ChargeGuard Chief Engineer",
+            hashed_password=hash_password("ChargeGuardAdmin123!"),
+            role="admin",
+            is_active=True
+        )
+        db.add(admin_user)
+
+    engineer_user = db.query(User).filter(User.username == "engineer").first()
+    if not engineer_user:
+        engineer_user = User(
+            username="engineer",
+            email="engineer@chargeguard.io",
+            full_name="Test Bench Operator",
+            hashed_password=hash_password("ChargeGuardDev123!"),
+            role="engineer",
+            is_active=True
+        )
+        db.add(engineer_user)
+    db.commit()
+
+    # 1. Devices & Configurations
     dev_sim = db.query(Device).filter(Device.device_id == "cg-sim-01").first()
     if not dev_sim:
         dev_sim = Device(
@@ -45,6 +72,38 @@ def seed_database(db: Session, force_reset_demo: bool = False):
         )
         db.add(dev_hw)
     db.commit()
+
+    # Configurations
+    for dev_id in ["cg-sim-01", "cg-esp32-001"]:
+        conf = db.query(DeviceConfiguration).filter(DeviceConfiguration.device_id == dev_id).first()
+        if not conf:
+            conf = DeviceConfiguration(
+                device_id=dev_id,
+                voltage_divider_ratio=1.0,
+                acs712_sensitivity_mv_per_a=185.0,
+                acs712_zero_v_offset=2.50,
+                temp_offset_c=0.0,
+                humidity_offset_pct=0.0,
+                dht_installed=True
+            )
+            db.add(conf)
+    db.commit()
+
+    # Sample Maintenance Records
+    m_rec = db.query(MaintenanceRecord).first()
+    if not m_rec:
+        db.add(MaintenanceRecord(
+            device_id="cg-esp32-001",
+            cable_id="cable-worn-c2c-04",
+            issue_detected="Intermittent Voltage Drop and Contact Resistance Spike",
+            severity="warning",
+            supporting_measurements=json.dumps({"voltage_drop_v": 0.48, "resistance_ohm": 0.42, "current_a": 1.48}),
+            possible_causes="Deformed CC/VBUS connector pins or fraying braided ground sheath.",
+            recommended_inspection="Inspect USB-C plug contacts under magnification and clean with contact cleaner spray.",
+            action_taken="Scheduled bench pin retention test.",
+            status="pending"
+        ))
+        db.commit()
 
     # 2. Cables
     cables_data = [
