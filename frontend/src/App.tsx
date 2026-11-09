@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { DashboardPage } from './pages/DashboardPage';
 import { LiveTestingPage } from './pages/LiveTestingPage';
@@ -32,7 +32,7 @@ export function App() {
   }, [fetchSummary]);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/" element={<Layout summary={summary} onRefreshSummary={fetchSummary} />}>
           <Route index element={<DashboardPage />} />
@@ -48,7 +48,7 @@ export function App() {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
