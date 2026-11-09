@@ -51,7 +51,7 @@ export const DashboardPage: React.FC = () => {
   const [recentTests, setRecentTests] = useState<TestSessionSummary[]>([]);
   const [liveChartData, setLiveChartData] = useState<any[]>([]);
   const [feedTab, setFeedTab] = useState<'alerts' | 'activity'>('alerts');
-  const [chartMetric, setChartMetric] = useState<'all' | 'voltage' | 'current' | 'temperature'>('all');
+  const [chartMetric, setChartMetric] = useState<'all' | 'voltage' | 'current' | 'temperature' | 'degradation'>('all');
 
   // Load recent tests
   useEffect(() => {
@@ -71,6 +71,8 @@ export const DashboardPage: React.FC = () => {
           sourceVoltage: latestTelemetry.source_voltage_v ?? null,
           current: latestTelemetry.current_a ?? 0,
           temperature: latestTelemetry.temperature_c ?? 0,
+          resistance: Number(((latestTelemetry.effective_resistance_ohm ?? 0.065) * 1000).toFixed(1)), // in mΩ
+          healthScore: latestTelemetry.health_score ?? (latestTelemetry.fault_status === 'FAULT' ? 55 : 94),
           humidity: (latestTelemetry as any).humidity_pct ?? 55.0,
           stability: (latestTelemetry as any).voltage_stability ?? 0.005,
         };
@@ -568,6 +570,14 @@ export const DashboardPage: React.FC = () => {
               >
                 Temperature Trend
               </button>
+              <button
+                onClick={() => setChartMetric('degradation')}
+                className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                  chartMetric === 'degradation' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Health & Resistance Drift
+              </button>
             </div>
           </div>
 
@@ -610,6 +620,26 @@ export const DashboardPage: React.FC = () => {
                       dot={false}
                       name="Temp (°C)"
                     />
+                  )}
+                  {chartMetric === 'degradation' && (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="healthScore"
+                        stroke="#10b981"
+                        strokeWidth={2.5}
+                        dot={false}
+                        name="Health Score (0-100)"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="resistance"
+                        stroke="#a855f7"
+                        strokeWidth={2}
+                        dot={false}
+                        name="Loop Resistance (mΩ)"
+                      />
+                    </>
                   )}
                 </LineChart>
               </ResponsiveContainer>

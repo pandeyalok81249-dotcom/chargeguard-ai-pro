@@ -262,6 +262,17 @@ export const TestHistoryPage: React.FC = () => {
                     </button>
 
                     <a
+                      href={api.getTestReportPdfUrl(t.test_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-rose-400 hover:text-rose-300 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      title="Download Certified PDF Report"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </a>
+
+                    <a
                       href={api.getSingleTestExportCsvUrl(t.test_id)}
                       download
                       className="text-slate-400 hover:text-emerald-400 text-xs font-medium inline-flex items-center gap-0.5 cursor-pointer"

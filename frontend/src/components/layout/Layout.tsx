@@ -49,6 +49,15 @@ export const Layout: React.FC<LayoutProps> = ({ summary, onRefreshSummary }) => 
     }
   };
 
+  const handleAcknowledgeAlert = async (alertId: number) => {
+    try {
+      await api.acknowledgeAlert(alertId);
+      onRefreshSummary();
+    } catch (e) {
+      console.error('Failed to acknowledge alert', e);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-[#0b0f19] text-slate-100 overflow-hidden font-sans">
       {/* Sidebar */}
@@ -64,6 +73,8 @@ export const Layout: React.FC<LayoutProps> = ({ summary, onRefreshSummary }) => 
           activeTest={activeTest}
           wsConnected={isConnected}
           currentUser={currentUser}
+          latestAlerts={summary?.latest_alerts}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onStopTest={handleStopTest}
         />
